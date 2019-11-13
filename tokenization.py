@@ -164,7 +164,9 @@ class FullTokenizer(object):
   def __init__(self, vocab_file, do_lower_case=True):
     self.vocab = load_vocab(vocab_file)
     self.inv_vocab = {v: k for k, v in self.vocab.items()}
-    self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
+    self.basic_tokenizer = BasicTokenizer(
+        do_lower_case=do_lower_case,
+        vocab=self.vocab)
     self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
 
   def tokenize(self, text):
@@ -185,13 +187,16 @@ class FullTokenizer(object):
 class BasicTokenizer(object):
   """Runs basic tokenization (punctuation splitting, lower casing, etc.)."""
 
-  def __init__(self, do_lower_case=True):
+  def __init__(self, do_lower_case=True, vocab=None):
     """Constructs a BasicTokenizer.
 
     Args:
       do_lower_case: Whether to lower case the input.
+      vocab: (Optional) vocabulary. If presented, the tokenizer won't split
+        words which are presented in the vocabulary
     """
     self.do_lower_case = do_lower_case
+    self.vocab = vocab
 
   def tokenize(self, text):
     """Tokenizes a piece of text."""
@@ -212,7 +217,10 @@ class BasicTokenizer(object):
       if self.do_lower_case:
         token = token.lower()
         token = self._run_strip_accents(token)
-      split_tokens.extend(self._run_split_on_punc(token))
+      if self.vocab is not None and token in self.vocab:
+        split_tokens.append(token)
+      else:
+        split_tokens.extend(self._run_split_on_punc(token))
 
     output_tokens = whitespace_tokenize(" ".join(split_tokens))
     return output_tokens
@@ -234,9 +242,12 @@ class BasicTokenizer(object):
     i = 0
     start_new_word = True
     output = []
+    is_mid = (len(chars) > 2 and chars[0] == '/' and chars[2] == '/'
+              and (chars[1] == 'm' or chars[1] == 'g'))
     while i < len(chars):
       char = chars[i]
-      if _is_punctuation(char):
+      is_mid_prefix = (is_mid and i <= 2)
+      if _is_punctuation(char) and not is_mid_prefix:
         output.append([char])
         start_new_word = True
       else:
@@ -386,6 +397,9 @@ def _is_control(char):
 def _is_punctuation(char):
   """Checks whether `chars` is a punctuation character."""
   cp = ord(char)
+  if char == '_':
+    return False
+
   # We treat all non-letter/number ASCII as punctuation.
   # Characters such as "^", "$", and "`" are not in the Unicode
   # Punctuation class but we treat them as punctuation anyways, for
